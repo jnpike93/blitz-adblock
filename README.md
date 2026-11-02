@@ -17,6 +17,33 @@ A clean, native anti-tamper compliant advertisement blocker for the **Blitz.gg**
 
 ---
 
+## Installation & Download
+
+### Method 1: Git Clone (Recommended - No Browser Warnings)
+Open PowerShell or Command Prompt and run:
+```powershell
+git clone https://github.com/jnpike93/blitz-adblock.git
+cd blitz-adblock
+.\setup.bat
+```
+
+---
+
+### Method 2: ZIP Download
+1. Click the green **`<> Code`** button on GitHub and choose **Download ZIP**.
+2. Extract the ZIP folder to your PC.
+3. Double-click **`setup.bat`**.
+
+> [!NOTE]
+> **Why does Google Chrome or Windows show a warning on the ZIP?**
+> Google Safe Browsing and Windows SmartScreen automatically flag ZIP archives from newly created GitHub repositories containing `.bat` and `.ps1` automation scripts as "untrusted" or "dangerous" by default. This is a generic heuristic false positive.
+> 
+> - **In Google Chrome**: Press `Ctrl + J` (Downloads) -> find the blocked file -> click **"Download suspicious file"** (or **"Keep anyway"**).
+> - **In Windows SmartScreen**: Click **"More info"** -> **"Run anyway"**.
+> - Alternatively, use **Method 1 (`git clone`)** which avoids browser download heuristics entirely.
+
+---
+
 ## Usage
 
 ### 1. Initial Installation

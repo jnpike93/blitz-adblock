@@ -75,19 +75,19 @@ def patch_blitz_core_nodes():
 
         try:
             with open(fp, "r+b") as f:
-                # Patch call VerifyApp at 0x6279 to NOPs (90 90 90 90 90)
+                # Patch call VerifyApp at 0x6279 to NOPs
                 f.seek(0x6279)
                 curr_call = f.read(5)
-                if curr_call == b"\xe8\x32\xf6\x00\x00":
+                if curr_call == bytes.fromhex("e832f60000"):
                     f.seek(0x6279)
-                    f.write(b"\x90\x90\x90\x90\x90")
+                    f.write(bytes.fromhex("9090909090"))
 
-                # Patch start of VerifyApp at 0x158b0 to RET (c3)
+                # Patch start of VerifyApp at 0x158b0 to RET
                 f.seek(0x158b0)
                 curr_start = f.read(1)
-                if curr_start == b"\x48":
+                if curr_start == bytes.fromhex("48"):
                     f.seek(0x158b0)
-                    f.write(b"\xc3")
+                    f.write(bytes.fromhex("c3"))
             print(f"  [+] Patched anti-tamper bypass in {fp}")
         except Exception as e:
             print(f"  [-] Warning patching {fp}: {e}")

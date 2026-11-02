@@ -14,6 +14,10 @@ param(
     [switch]$NoLaunch
 )
 
+try {
+    Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass -Force -ErrorAction SilentlyContinue
+} catch {}
+
 $ErrorActionPreference = "Stop"
 
 function Write-Cyan { param([string]$Message) Write-Host "[*] $Message" -ForegroundColor Cyan }
