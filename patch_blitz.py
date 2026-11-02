@@ -679,6 +679,37 @@ function getCSOverlayEnabled(lolSettings, role) {
     if target_ult in content:
         content = content.replace(target_ult, replacement_ult, 1)
 
+    # 6. Default Arena overlay and Arena augments to enabled
+    target_arena_overlay = """function getArenaOverlaySettings(lolSettings) {
+  return {
+    enable: getSetting(lolSettings, ARENA.enabled, false),
+    minimized: getSetting(lolSettings, ARENA.minimized, false),
+  };
+}"""
+    replacement_arena_overlay = """function getArenaOverlaySettings(lolSettings) {
+  // __BLITZ_ADBLOCK_ACTIVE__: Default Arena overlay to enabled
+  return {
+    enable: getSetting(lolSettings, ARENA.enabled, true),
+    minimized: getSetting(lolSettings, ARENA.minimized, false),
+  };
+}"""
+    if target_arena_overlay in content:
+        content = content.replace(target_arena_overlay, replacement_arena_overlay, 1)
+
+    target_arena_augments = """function getArenaAugmentsSettings(lolSettings) {
+  return {
+    enable: lolSettings[ARENA_AUGMENTS.enabledKey] || false,
+  };
+}"""
+    replacement_arena_augments = """function getArenaAugmentsSettings(lolSettings) {
+  // __BLITZ_ADBLOCK_ACTIVE__: Default Arena augments to enabled
+  return {
+    enable: lolSettings?.[ARENA_AUGMENTS.enabledKey] !== false,
+  };
+}"""
+    if target_arena_augments in content:
+        content = content.replace(target_arena_augments, replacement_arena_augments, 1)
+
     with open(file_path, "w", encoding="utf-8") as f:
         f.write(content)
     print("  [+] Patched src/gameHandlers/lol/overlaySettings.js (Overlay Pro status & all overlay components defaulted to ON)")
