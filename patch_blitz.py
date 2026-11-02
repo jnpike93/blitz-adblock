@@ -640,6 +640,9 @@ def patch_overlay_settings(file_path):
   parsed.isSummonersRiftOverlayEnabled = parsed.isSummonersRiftOverlayEnabled !== false;
   parsed.isSummonersRiftSkillOverlayEnabled2023 = parsed.isSummonersRiftSkillOverlayEnabled2023 !== false;
   parsed.isLoadingScreenOverlayEnabled = parsed.isLoadingScreenOverlayEnabled !== false;
+  // Reset Arena overlay panel to disabled - enabling it breaks ARAM augment badge rendering.
+  // A prior patch may have persisted true via the DLL settings save-back loop.
+  if (parsed.isArenaOverlayEnabled === true) parsed.isArenaOverlayEnabled = false;
   return parsed;
 }"""
     if target_get_settings in content:
