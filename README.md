@@ -55,6 +55,14 @@ This restores the pristine backup copies of `app.asar` and `blitz_core.node` and
 
 ---
 
+## In-Game Overlay (League of Legends)
+
+- **Display Mode**: League of Legends must be set to **Borderless** or **Windowed** in the in-game Video settings (Exclusive Fullscreen prevents DirectX overlay hooking).
+- **Default Overlay Hotkeys**: Toggle the in-game overlay using `~` (Tilde), `Tab`, or `Ctrl + G`.
+- **Pre-Existing Game Detection**: Active games are automatically detected on startup and injected without needing to restart the game client.
+
+---
+
 ## Verification
 
 Check current patch status via Python CLI at any time:
