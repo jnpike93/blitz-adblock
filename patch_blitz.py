@@ -411,204 +411,14 @@ module.exports'''
     print("  [+] Patched src/auth.js (Ad-Free and Pro roles emulated)")
 
 
-def patch_lol_index(file_path):
-    """Patch src/gameHandlers/lol/index.js to fix the first-selection arena augment overlay bug."""
-    if not file_path.exists():
-        print(f"  [-] Skipping patch_lol_index: {file_path} not found")
-        return
-    with open(file_path, "r", encoding="utf-8") as f:
-        content = f.read()
-
-    # Fix 1: sendArenaAugmentsData - guard against null data; fall back to DB
-    target_send = """  sendArenaAugmentsData: async (data) => {
-    if (state.ready) {
-      const blitzCore = getBlitzCore();
-
-      const fbArenaAugmentsData = fb.generateJson("1004", data);
-
-      if (
-        !fbArenaAugmentsData ||
-        !blitzCore.SendIpc(
-          BLITZ_IPC_CHANNELS.producers.game,
-          fbArenaAugmentsData.buffer
-        )
-      ) {"""
-    replacement_send = """  sendArenaAugmentsData: async (data) => {
-    if (state.ready) {
-      const blitzCore = getBlitzCore();
-
-      // __BLITZ_ADBLOCK_ACTIVE__: Fall back to DB-stored augments if live data is missing
-      let augData = data;
-      if (!augData) {
-        try {
-          const { getArenaAugmentsData } = require("./overlaySettings");
-          augData = await getArenaAugmentsData();
-        } catch(e) {}
-      }
-      const fbArenaAugmentsData = fb.generateJson("1004", augData);
-
-      if (
-        !fbArenaAugmentsData ||
-        !blitzCore.SendIpc(
-          BLITZ_IPC_CHANNELS.producers.game,
-          fbArenaAugmentsData.buffer
-        )
-      ) {"""
-    if target_send in content:
-        content = content.replace(target_send, replacement_send, 1)
-        print("  [+] Patched sendArenaAugmentsData (DB fallback for null data)")
-    else:
-        print("  [-] Warning: sendArenaAugmentsData target not found in index.js")
-
-    # Fix 2: onInject - skip null arenaEvent flatbuffer (prevents ERR! log line that
-    # can mask overlay settings send), and re-send augments from DB if missing
-    target_arena_send = """    // Generate flat buffer with league arena data.
-    const flatArena = fb.generateJson("1003", ovSettings.overlay.arenaEvent);
-
-    // Send league overlay settings.
-    if (
-      !flatArena ||
-      !blitzCore.SendIpc(BLITZ_IPC_CHANNELS.producers.game, flatArena.buffer)
-    )
-      log.error("[core] [LoL]", "Failed to send league arena data.");"""
-    replacement_arena_send = """    // Generate flat buffer with league arena data.
-    // __BLITZ_ADBLOCK_ACTIVE__: Skip arenaEvent send when null (e.g. ARAM/non-Arena modes)
-    if (ovSettings.overlay.arenaEvent) {
-      const flatArena = fb.generateJson("1003", ovSettings.overlay.arenaEvent);
-      if (
-        !flatArena ||
-        !blitzCore.SendIpc(BLITZ_IPC_CHANNELS.producers.game, flatArena.buffer)
-      )
-        log.error("[core] [LoL]", "Failed to send league arena data.");
-    }"""
-    if target_arena_send in content:
-        content = content.replace(target_arena_send, replacement_arena_send, 1)
-        print("  [+] Patched onInject arenaEvent send (null guard)")
-    else:
-        print("  [-] Warning: arenaEvent send target not found in index.js")
-
-    # Fix 3: onInject - if arenaAugmentsData came back null from getSettings (because
-    # championId was not -3 or the waiting slot was empty), read directly from DB.
-    # Also re-send settings and augments after a delay to ensure the web overlay has loaded.
-    target_augments_inject = """    const fbArenaAugmentsData = fb.generateJson(
-      "1004",
-      ovSettings.overlay.arenaAugmentsData
-    );
-
-    // Only get arena augment data IF enabled
-    if (ovSettings.overlay.arena_augments) {
-      log.error("[core] [LoL]", "Preparing to send LoL Arena Augments data.");
-
-      if (
-        !fbArenaAugmentsData ||
-        !blitzCore.SendIpc(
-          BLITZ_IPC_CHANNELS.producers.game,
-          fbArenaAugmentsData.buffer
-        )
-      ) {
-        log.error(
-          "[core] [LoL]",
-          "[Overlay] Failed to send initial augments data"
-        );
-      } else {
-        log.info("[core] [LoL]", "[Overlay] Sent initial augments data");
-      }
-    }"""
-    replacement_augments_inject = """    // __BLITZ_ADBLOCK_ACTIVE__: Always send arena augments on inject.
-    // If getSettings() returned null arenaAugmentsData (first selection, championId != -3),
-    // fall back to DB to get the cached augment stats that arrived before injection completed.
-    let resolvedAugmentsData = ovSettings.overlay.arenaAugmentsData;
-    if (!resolvedAugmentsData) {
-      try {
-        const { getArenaAugmentsData } = require("./overlaySettings");
-        resolvedAugmentsData = await getArenaAugmentsData();
-        if (resolvedAugmentsData) {
-          log.info("[core] [LoL]", "[Overlay] Loaded arena augments from DB fallback");
-        }
-      } catch(e) {
-        log.error("[core] [LoL]", "[Overlay] DB augments fallback failed", e);
-      }
-    }
-    const fbArenaAugmentsData = fb.generateJson("1004", resolvedAugmentsData);
-
-    // Only get arena augment data IF enabled
-    if (ovSettings.overlay.arena_augments) {
-      log.info("[core] [LoL]", "Preparing to send LoL Arena Augments data.");
-
-      if (
-        !fbArenaAugmentsData ||
-        !blitzCore.SendIpc(
-          BLITZ_IPC_CHANNELS.producers.game,
-          fbArenaAugmentsData.buffer
-        )
-      ) {
-        log.error(
-          "[core] [LoL]",
-          "[Overlay] Failed to send initial augments data"
-        );
-      } else {
-        log.info("[core] [LoL]", "[Overlay] Sent initial augments data");
-      }
-    }
-
-    // __BLITZ_ADBLOCK_ACTIVE__: Re-send overlay settings and augments after delay
-    // to guarantee the web overlay page has fully loaded its JavaScript and is ready
-    // to process the data. The first send often arrives before the page initializes.
-    const resendDelays = [3000, 8000, 15000];
-    for (const delay of resendDelays) {
-      setTimeout(async () => {
-        try {
-          const bc = getBlitzCore();
-          // Re-send overlay settings
-          const { ovSettings: freshOv } = await getSettings(false);
-          const freshSettings = fb.generateOverlaySettings("1001", freshOv.overlay);
-          if (freshSettings) bc.SendIpc(BLITZ_IPC_CHANNELS.producers.game, freshSettings.buffer);
-          // Re-send augments data
-          let augData = freshOv.overlay.arenaAugmentsData;
-          if (!augData) {
-            try {
-              const { getArenaAugmentsData } = require("./overlaySettings");
-              augData = await getArenaAugmentsData();
-            } catch(e2) {}
-          }
-          if (augData) {
-            const fbAug = fb.generateJson("1004", augData);
-            if (fbAug) {
-              bc.SendIpc(BLITZ_IPC_CHANNELS.producers.game, fbAug.buffer);
-              log.info("[core] [LoL]", "[Overlay] Re-sent augments data after " + delay + "ms delay");
-            }
-            try {
-              let augCopy = { ...augData };
-              if (augCopy["Logo"]) delete augCopy["Logo"];
-              getOverlayIpcManager().sendMessageToGame(
-                createBridgeMessage(
-                  "league_of_legends/blitz/set_arena_augments",
-                  new TextEncoder().encode(JSON.stringify(augCopy))
-                )
-              );
-            } catch(e3) {}
-          }
-        } catch(e) {
-          log.error("[core] [LoL]", "[Overlay] Delayed re-send failed at " + delay + "ms", e);
-        }
-      }, delay);
-    }"""
-    if target_augments_inject in content:
-        content = content.replace(target_augments_inject, replacement_augments_inject, 1)
-        print("  [+] Patched onInject arenaAugmentsData (DB fallback on first selection)")
-    else:
-        print("  [-] Warning: onInject augmentsData target not found in index.js")
-
-    with open(file_path, "w", encoding="utf-8") as f:
-        f.write(content)
-    print("  [+] Patched src/gameHandlers/lol/index.js (First-selection arena augment overlay fix)")
+### patch_lol_index REMOVED - all index.js patches were causing the first-selection bug ###
 
 
 def patch_overlay_settings(file_path):
     with open(file_path, "r", encoding="utf-8") as f:
         content = f.read()
 
-    # 1. Pro status enabled
+    # 1. Pro status: always return true (required for overlay features to activate)
     pro_target = "async function checkProStatus() {"
     pro_replacement = '''async function checkProStatus() {
   // __BLITZ_ADBLOCK_ACTIVE__
@@ -616,7 +426,10 @@ def patch_overlay_settings(file_path):
     if pro_target in content:
         content = content.replace(pro_target, pro_replacement, 1)
 
-    # 2. Resilient getLOLSettings defaulting overlay features to enabled
+    # 2. Resilient getLOLSettings: wrap in try/catch so a missing DB entry does not
+    #    crash overlay init.  Do NOT override any boolean defaults - leave the
+    #    original `|| false` semantics in every downstream getter intact so the
+    #    overlay settings JSON matches the unpatched version exactly.
     target_get_settings = """async function getLOLSettings() {
   let lolSettings = await db.get(dbKeys.LOL_SETTINGS);
   if (!lolSettings) {
@@ -625,126 +438,34 @@ def patch_overlay_settings(file_path):
   return JSON.parse(lolSettings);
 }"""
     replacement_get_settings = """async function getLOLSettings() {
-  // __BLITZ_ADBLOCK_ACTIVE__: Resilient settings with overlay enabled by default
+  // __BLITZ_ADBLOCK_ACTIVE__: Resilient wrapper - never throw on missing DB entry
   let lolSettings = null;
   try {
     lolSettings = await db.get(dbKeys.LOL_SETTINGS);
   } catch(e) {}
-  let parsed = {};
-  if (lolSettings) {
-    try {
-      parsed = JSON.parse(lolSettings);
-    } catch(e) {}
+  if (!lolSettings) {
+    return {};
   }
-  parsed.isAlwaysVisible = parsed.isAlwaysVisible !== false;
-  parsed.isSummonersRiftOverlayEnabled = parsed.isSummonersRiftOverlayEnabled !== false;
-  parsed.isSummonersRiftSkillOverlayEnabled2023 = parsed.isSummonersRiftSkillOverlayEnabled2023 !== false;
-  parsed.isLoadingScreenOverlayEnabled = parsed.isLoadingScreenOverlayEnabled !== false;
-  // Reset Arena overlay panel to disabled - enabling it breaks ARAM augment badge rendering.
-  // A prior patch may have persisted true via the DLL settings save-back loop.
-  if (parsed.isArenaOverlayEnabled === true) parsed.isArenaOverlayEnabled = false;
-  return parsed;
+  try {
+    return JSON.parse(lolSettings);
+  } catch(e) {
+    return {};
+  }
 }"""
     if target_get_settings in content:
         content = content.replace(target_get_settings, replacement_get_settings, 1)
 
-    # 3. Default fade / always-visible to true
-    target_fade = """function getFadeOption(lolSettings) {
-  return lolSettings.isAlwaysVisible || false;
-}"""
-    replacement_fade = """function getFadeOption(lolSettings) {
-  // __BLITZ_ADBLOCK_ACTIVE__: Default overlay to always visible
-  return lolSettings ? (lolSettings.isAlwaysVisible !== false) : true;
-}"""
-    if target_fade in content:
-        content = content.replace(target_fade, replacement_fade, 1)
-
-    # 4. Default CS & Skill overlay to enabled
-    target_cs_skill = """function getSkillOverlayEnabled(lolSettings) {
-  return lolSettings.isSummonersRiftSkillOverlayEnabled2023 || false;
-}
-
-function getCSOverlayEnabled(lolSettings, role) {
-  return lolSettings.isSummonersRiftOverlayEnabled || false;
-}"""
-    replacement_cs_skill = """function getSkillOverlayEnabled(lolSettings) {
-  // __BLITZ_ADBLOCK_ACTIVE__: Default skill overlay to enabled
-  return lolSettings ? (lolSettings.isSummonersRiftSkillOverlayEnabled2023 !== false) : true;
-}
-
-function getCSOverlayEnabled(lolSettings, role) {
-  // __BLITZ_ADBLOCK_ACTIVE__: Default CS overlay to enabled
-  return lolSettings ? (lolSettings.isSummonersRiftOverlayEnabled !== false) : true;
-}"""
-    if target_cs_skill in content:
-        content = content.replace(target_cs_skill, replacement_cs_skill, 1)
-
-    # 5. Default jungle timers, health relics, ultimate timers to enabled
-    target_jungle = """function getJungleTimersSettings(lolSettings) {
-  return {
-    enable: lolSettings[JUNGLE.enabledKey] || false,
-    displayOption: lolSettings[JUNGLE.displayOption] || false,
-    always_visible: lolSettings[JUNGLE.alwaysVisible] || false,
-  };
-}"""
-    replacement_jungle = """function getJungleTimersSettings(lolSettings) {
-  // __BLITZ_ADBLOCK_ACTIVE__: Default jungle timers to enabled & always visible
-  return {
-    enable: lolSettings?.[JUNGLE.enabledKey] !== false,
-    displayOption: lolSettings?.[JUNGLE.displayOption] ?? true,
-    always_visible: lolSettings?.[JUNGLE.alwaysVisible] !== false,
-  };
-}"""
-    if target_jungle in content:
-        content = content.replace(target_jungle, replacement_jungle, 1)
-
-    target_health = """function getHealthRelicTimersSettings(lolSettings) {
-  return {
-    enable: lolSettings[HEALTH.enabledKey] || false,
-  };
-}"""
-    replacement_health = """function getHealthRelicTimersSettings(lolSettings) {
-  // __BLITZ_ADBLOCK_ACTIVE__: Default health relic timers to enabled
-  return {
-    enable: lolSettings?.[HEALTH.enabledKey] !== false,
-  };
-}"""
-    if target_health in content:
-        content = content.replace(target_health, replacement_health, 1)
-
-    target_ult = """function getUltimateTimersSettings(lolSettings) {
-  return {
-    enable: lolSettings[ULTIMATE_TIMERS.enabledKey] || false,
-  };
-}"""
-    replacement_ult = """function getUltimateTimersSettings(lolSettings) {
-  // __BLITZ_ADBLOCK_ACTIVE__: Default ultimate timers to enabled
-  return {
-    enable: lolSettings?.[ULTIMATE_TIMERS.enabledKey] !== false,
-  };
-}"""
-    if target_ult in content:
-        content = content.replace(target_ult, replacement_ult, 1)
-
-    # 6. Default Arena augments to enabled (but leave Arena overlay panel alone - it
-    # controls the team fight panel which conflicts with ARAM augment badges when enabled)
-    target_arena_augments = """function getArenaAugmentsSettings(lolSettings) {
-  return {
-    enable: lolSettings[ARENA_AUGMENTS.enabledKey] || false,
-  };
-}"""
-    replacement_arena_augments = """function getArenaAugmentsSettings(lolSettings) {
-  // __BLITZ_ADBLOCK_ACTIVE__: Default Arena augments to enabled
-  return {
-    enable: lolSettings?.[ARENA_AUGMENTS.enabledKey] !== false,
-  };
-}"""
-    if target_arena_augments in content:
-        content = content.replace(target_arena_augments, replacement_arena_augments, 1)
+    # NOTE: All other getters (getFadeOption, getCSOverlayEnabled, getSkillOverlayEnabled,
+    # getJungleTimersSettings, getHealthRelicTimersSettings, getUltimateTimersSettings,
+    # getArenaAugmentsSettings, getArenaOverlaySettings) are LEFT UNMODIFIED.
+    # The original code uses `|| false` which is correct - the user's DB already
+    # has these values set from their Blitz settings UI.  Overriding them to `true`
+    # changes the overlay settings JSON sent to the DLL, which broke ARAM augment
+    # badge rendering on the first selection screen.
 
     with open(file_path, "w", encoding="utf-8") as f:
         f.write(content)
-    print("  [+] Patched src/gameHandlers/lol/overlaySettings.js (Overlay Pro status & all overlay components defaulted to ON)")
+    print("  [+] Patched src/gameHandlers/lol/overlaySettings.js (Pro status only, no default overrides)")
 
 
 def patch_listeners_utils(file_path):
@@ -1132,10 +853,6 @@ def apply_patch():
         game_manager_path = temp_extract_dir / "src" / "gameHandlers" / "gameManager.js"
         patch_game_manager(game_manager_path)
         files_to_verify.append(game_manager_path)
-
-        lol_index_path = temp_extract_dir / "src" / "gameHandlers" / "lol" / "index.js"
-        patch_lol_index(lol_index_path)
-        files_to_verify.append(lol_index_path)
 
         create_window_path = temp_extract_dir / "src" / "createWindow.js"
         patch_create_window(create_window_path)
