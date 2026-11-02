@@ -6,6 +6,7 @@ A clean, native anti-tamper compliant advertisement blocker for the **Blitz.gg**
 
 ## Features
 
+- **Automatic Prerequisites**: `setup.bat` automatically detects and installs Python 3 and Node.js via `winget` if missing.
 - **No Video Ads**: Eliminates out-of-page floating video players, bottom-left sticky video units, and audio streams.
 - **No Sidebar or Banner Ads**: Removes Playwire, LuckyLand Casino, Ramp, Adobe, and Dasani display units.
 - **No "Remove Ads with Premium" Prompts**: Emulates Pro and Ad-Free subscriber roles.
@@ -16,30 +17,12 @@ A clean, native anti-tamper compliant advertisement blocker for the **Blitz.gg**
 
 ---
 
-## Prerequisites
-
-Ensure **Python 3** and **Node.js** are installed on Windows:
-
-```cmd
-winget install Python.Python.3.12
-winget install OpenJS.NodeJS.LTS
-```
-
-Clone the repository:
-
-```cmd
-git clone https://github.com/jnpike93/blitz-adblock.git
-cd blitz-adblock
-```
-
----
-
 ## Usage
 
 ### 1. Initial Installation
 Double-click **`setup.bat`**.
 
-This closes Blitz, patches the client files, and launches Blitz ad-free.
+This checks for Python 3 and Node.js (auto-installing them via `winget` if missing), patches Blitz, and launches it ad-free.
 
 ---
 
@@ -63,7 +46,8 @@ This restores the pristine backup copies of `app.asar` and `blitz_core.node` and
 
 | File | Purpose |
 | :--- | :--- |
-| **`setup.bat`** | 1-click initial installer. |
+| **`setup.bat`** | 1-click initial installer (auto-installs prerequisites via `setup.ps1`). |
+| **`setup.ps1`** | Automated prerequisite resolver (Python 3, Node.js) and patch invoker. |
 | **`fix-update.bat`** | 1-click script to run after Blitz updates. |
 | **`uninstall.bat`** | 1-click uninstaller to restore stock Blitz files. |
 | **`patch_blitz.py`** | Core engine: binary patcher, ASAR extractor, JS patch injector, and repacker. |

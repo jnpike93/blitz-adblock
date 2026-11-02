@@ -7,7 +7,7 @@ echo  Blitz AdBlocker - One-Click Installer
 echo ============================================================
 echo.
 
-python "%~dp0patch_blitz.py" --patch --launch
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0setup.ps1" %*
 if %errorlevel% neq 0 (
     echo.
     echo [-] An error occurred during setup.
@@ -16,5 +16,4 @@ if %errorlevel% neq 0 (
 )
 
 echo.
-echo [+] Installation complete! Blitz is now running ad-free.
 pause
