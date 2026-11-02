@@ -488,7 +488,8 @@ def patch_lol_index(file_path):
         print("  [-] Warning: arenaEvent send target not found in index.js")
 
     # Fix 3: onInject - if arenaAugmentsData came back null from getSettings (because
-    # championId was not -3 or the waiting slot was empty), read directly from DB
+    # championId was not -3 or the waiting slot was empty), read directly from DB.
+    # Also re-send settings and augments after a delay to ensure the web overlay has loaded.
     target_augments_inject = """    const fbArenaAugmentsData = fb.generateJson(
       "1004",
       ovSettings.overlay.arenaAugmentsData
@@ -548,6 +549,49 @@ def patch_lol_index(file_path):
       } else {
         log.info("[core] [LoL]", "[Overlay] Sent initial augments data");
       }
+    }
+
+    // __BLITZ_ADBLOCK_ACTIVE__: Re-send overlay settings and augments after delay
+    // to guarantee the web overlay page has fully loaded its JavaScript and is ready
+    // to process the data. The first send often arrives before the page initializes.
+    const resendDelays = [3000, 8000, 15000];
+    for (const delay of resendDelays) {
+      setTimeout(async () => {
+        try {
+          const bc = getBlitzCore();
+          // Re-send overlay settings
+          const { ovSettings: freshOv } = await getSettings(false);
+          const freshSettings = fb.generateOverlaySettings("1001", freshOv.overlay);
+          if (freshSettings) bc.SendIpc(BLITZ_IPC_CHANNELS.producers.game, freshSettings.buffer);
+          // Re-send augments data
+          let augData = freshOv.overlay.arenaAugmentsData;
+          if (!augData) {
+            try {
+              const { getArenaAugmentsData } = require("./overlaySettings");
+              augData = await getArenaAugmentsData();
+            } catch(e2) {}
+          }
+          if (augData) {
+            const fbAug = fb.generateJson("1004", augData);
+            if (fbAug) {
+              bc.SendIpc(BLITZ_IPC_CHANNELS.producers.game, fbAug.buffer);
+              log.info("[core] [LoL]", "[Overlay] Re-sent augments data after " + delay + "ms delay");
+            }
+            try {
+              let augCopy = { ...augData };
+              if (augCopy["Logo"]) delete augCopy["Logo"];
+              getOverlayIpcManager().sendMessageToGame(
+                createBridgeMessage(
+                  "league_of_legends/blitz/set_arena_augments",
+                  new TextEncoder().encode(JSON.stringify(augCopy))
+                )
+              );
+            } catch(e3) {}
+          }
+        } catch(e) {
+          log.error("[core] [LoL]", "[Overlay] Delayed re-send failed at " + delay + "ms", e);
+        }
+      }, delay);
     }"""
     if target_augments_inject in content:
         content = content.replace(target_augments_inject, replacement_augments_inject, 1)
@@ -679,23 +723,8 @@ function getCSOverlayEnabled(lolSettings, role) {
     if target_ult in content:
         content = content.replace(target_ult, replacement_ult, 1)
 
-    # 6. Default Arena overlay and Arena augments to enabled
-    target_arena_overlay = """function getArenaOverlaySettings(lolSettings) {
-  return {
-    enable: getSetting(lolSettings, ARENA.enabled, false),
-    minimized: getSetting(lolSettings, ARENA.minimized, false),
-  };
-}"""
-    replacement_arena_overlay = """function getArenaOverlaySettings(lolSettings) {
-  // __BLITZ_ADBLOCK_ACTIVE__: Default Arena overlay to enabled
-  return {
-    enable: getSetting(lolSettings, ARENA.enabled, true),
-    minimized: getSetting(lolSettings, ARENA.minimized, false),
-  };
-}"""
-    if target_arena_overlay in content:
-        content = content.replace(target_arena_overlay, replacement_arena_overlay, 1)
-
+    # 6. Default Arena augments to enabled (but leave Arena overlay panel alone - it
+    # controls the team fight panel which conflicts with ARAM augment badges when enabled)
     target_arena_augments = """function getArenaAugmentsSettings(lolSettings) {
   return {
     enable: lolSettings[ARENA_AUGMENTS.enabledKey] || false,
