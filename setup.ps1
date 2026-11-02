@@ -107,14 +107,31 @@ if (-not $hasNpx) {
 # Final verification of tools in current session
 Update-SessionPath
 
-# 4. Stop running Blitz instances
+# 5. Stop running Blitz instances
 Write-Host ""
 Write-Cyan "Terminating running Blitz instances..."
 Get-Process -Name "Blitz" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
 Start-Sleep -Seconds 1
 Write-Green "Blitz processes closed."
 
-# 5. Apply the AdBlock Patch
+# 6. Configure UIPI overlay injector for League of Legends (if permissions allow)
+try {
+    $progDir = "C:\Program Files\Blitz"
+    if (-not (Test-Path $progDir)) {
+        New-Item -ItemType Directory -Path $progDir -Force -ErrorAction SilentlyContinue | Out-Null
+    }
+    $depsDir = Join-Path $env:APPDATA "Blitz\blitz-deps"
+    $latestDeps = Get-ChildItem -Path $depsDir -Directory -ErrorAction SilentlyContinue | Sort-Object Name -Descending | Select-Object -First 1
+    if ($latestDeps) {
+        Copy-Item (Join-Path $latestDeps.FullName "safe_x64_injector_ui.exe") (Join-Path $progDir "safe_x64_injector_ui.exe") -Force -ErrorAction SilentlyContinue
+        Copy-Item (Join-Path $latestDeps.FullName "safe_x86_injector_ui.exe") (Join-Path $progDir "safe_x86_injector_ui.exe") -Force -ErrorAction SilentlyContinue
+        if (Test-Path (Join-Path $progDir "safe_x64_injector_ui.exe")) {
+            Write-Green "UIPI injector configured in $progDir"
+        }
+    }
+} catch {}
+
+# 7. Apply the AdBlock Patch
 Write-Host ""
 Write-Cyan "Applying native anti-tamper bypass and adblock patch..."
 $launchArg = if ($NoLaunch) { "" } else { "--launch" }
@@ -130,3 +147,4 @@ Write-Host "============================================================" -Foreg
 Write-Host " Installation Complete! Blitz is now running ad-free." -ForegroundColor White
 Write-Host " If Blitz ever auto-updates, double-click fix-update.bat." -ForegroundColor White
 Write-Host "============================================================" -ForegroundColor Green
+

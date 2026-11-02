@@ -450,6 +450,116 @@ def patch_listeners_utils(file_path):
         print("  [+] Patched src/listeners/utils.js (Immediate pro roles)")
 
 
+def patch_injection_manager(file_path):
+    if not file_path.exists():
+        return
+    with open(file_path, "r", encoding="utf-8") as f:
+        content = f.read()
+
+    target = """    if (!fs.existsSync(injector_exe)) {
+      reject(`injector_exe ${injector_exe} not exist`);
+      return;
+    }"""
+
+    replacement = """    // __BLITZ_ADBLOCK_ACTIVE__: Fallback to standard injector if UIPI injector is missing
+    if (!fs.existsSync(injector_exe)) {
+      injector_exe = platform === "x86" ? INJ_PATHS.safe_x86_injector : INJ_PATHS.safe_x64_injector;
+    }
+    if (!fs.existsSync(injector_exe)) {
+      reject(`injector_exe ${injector_exe} not exist`);
+      return;
+    }"""
+
+    if target in content:
+        content = content.replace(target, replacement, 1)
+        with open(file_path, "w", encoding="utf-8") as f:
+            f.write(content)
+        print("  [+] Patched src/injection-manager.js (Safe injector fallback)")
+
+
+def patch_game_manager(file_path):
+    if not file_path.exists():
+        return
+    with open(file_path, "r", encoding="utf-8") as f:
+        content = f.read()
+
+    # 1. Patch pre-existing game detection on startup
+    target_start = """function startGameHandlers() {
+  for (const [title, { onAppStart }] of Object.entries(gameHandlers)) {
+    if (onAppStart === undefined) continue;
+    Promise.resolve()
+      .then(onAppStart)
+      .catch((err) => log.error("[core]", `${title} onAppStart failed`, err));
+  }
+}"""
+
+    replacement_start = """function startGameHandlers() {
+  for (const [title, { onAppStart }] of Object.entries(gameHandlers)) {
+    if (onAppStart === undefined) continue;
+    Promise.resolve()
+      .then(onAppStart)
+      .catch((err) => log.error("[core]", `${title} onAppStart failed`, err));
+  }
+
+  // __BLITZ_ADBLOCK_ACTIVE__: Auto-detect games already running before Blitz was started
+  setTimeout(() => {
+    try {
+      const { getBlitzCore } = require("../native-utils");
+      const blitzCore = getBlitzCore();
+      for (const [wndName, shortName] of Object.entries(GAMES_WND_NAMES)) {
+        const procName = GAMES_PROC_NAMES[shortName];
+        if (!procName) continue;
+        const pid = blitzCore.findProcessId(procName);
+        if (pid && pid > 0) {
+          log.info("[core]", `[AdBlock] Auto-detected active game on startup: ${wndName} (${procName}, PID ${pid})`);
+          gameEvtEmitter.emit(evtTypes.emitters.GAME_WND_EVT, {
+            name: wndName,
+            pid: pid,
+            win_id: 1,
+            width: 1920,
+            height: 1080
+          });
+          break;
+        }
+      }
+    } catch (e) {
+      log.error("[core]", "Error detecting already running game", e);
+    }
+  }, 2000);
+}"""
+
+    if target_start in content:
+        content = content.replace(target_start, replacement_start, 1)
+
+    # 2. Patch waitUntilWindowIsReady so injection is never skipped
+    target_ready_regex = re.compile(
+        r"const waitUntilWindowIsReady = async \(wndAttributes\) => \{[\s\S]*?throw new Error\(\s*`\[GM\] \$\{wndAttributes\.name\} window did not become ready!`\s*\);\s*\};",
+        re.MULTILINE
+    )
+    replacement_ready = """const waitUntilWindowIsReady = async (wndAttributes) => {
+        // __BLITZ_ADBLOCK_ACTIVE__: Resilient window check with safe injection fallback
+        let retries = 15;
+        while (!_results.injectedDll && retries > 0) {
+          retries--;
+          try {
+            const wndInfo = blitzCore.GetWindowInfo(wndAttributes.name);
+            if (wndInfo && wndInfo.visible && wndInfo.width > 1 && wndInfo.height > 1) {
+              return true;
+            }
+          } catch(e) {}
+          await sleep(500);
+        }
+        return true;
+      };"""
+
+    if target_ready_regex.search(content):
+        content = target_ready_regex.sub(replacement_ready, content, count=1)
+
+    with open(file_path, "w", encoding="utf-8") as f:
+        f.write(content)
+    print("  [+] Patched src/gameHandlers/gameManager.js (Pre-existing game detection & resilient injection)")
+
+
 def patch_create_window(file_path):
     with open(file_path, "r", encoding="utf-8") as f:
         content = f.read()
@@ -695,6 +805,14 @@ def apply_patch():
         patch_listeners_utils(utils_path)
         files_to_verify.append(utils_path)
 
+        inj_manager_path = temp_extract_dir / "src" / "injection-manager.js"
+        patch_injection_manager(inj_manager_path)
+        files_to_verify.append(inj_manager_path)
+
+        game_manager_path = temp_extract_dir / "src" / "gameHandlers" / "gameManager.js"
+        patch_game_manager(game_manager_path)
+        files_to_verify.append(game_manager_path)
+
         create_window_path = temp_extract_dir / "src" / "createWindow.js"
         patch_create_window(create_window_path)
         files_to_verify.append(create_window_path)
@@ -782,9 +900,10 @@ def launch_blitz():
     if exe.exists():
         print("[*] Launching Blitz...")
         try:
-            # Use CREATE_BREAKAWAY_FROM_JOB / DETACHED_PROCESS on Windows so it survives CLI termination
-            flags = 0x00000008 if os.name == "nt" else 0
-            subprocess.Popen([str(exe)], creationflags=flags, close_fds=True)
+            if os.name == "nt":
+                subprocess.Popen(["explorer.exe", str(exe)])
+            else:
+                subprocess.Popen([str(exe)], close_fds=True)
             print("[+] Blitz launched successfully.")
         except Exception as e:
             print(f"[-] Warning: Failed to launch Blitz: {e}")
