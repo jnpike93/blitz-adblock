@@ -25,6 +25,13 @@ winget install Python.Python.3.12
 winget install OpenJS.NodeJS.LTS
 ```
 
+Clone the repository:
+
+```cmd
+git clone https://github.com/jnpike93/blitz-adblock.git
+cd blitz-adblock
+```
+
 ---
 
 ## Usage
