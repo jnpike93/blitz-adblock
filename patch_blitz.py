@@ -415,16 +415,124 @@ def patch_overlay_settings(file_path):
     with open(file_path, "r", encoding="utf-8") as f:
         content = f.read()
 
+    # 1. Pro status enabled
     pro_target = "async function checkProStatus() {"
     pro_replacement = '''async function checkProStatus() {
   // __BLITZ_ADBLOCK_ACTIVE__
   return true;'''
-
     if pro_target in content:
         content = content.replace(pro_target, pro_replacement, 1)
-        with open(file_path, "w", encoding="utf-8") as f:
-            f.write(content)
-        print("  [+] Patched src/gameHandlers/lol/overlaySettings.js (Overlay Pro status enabled)")
+
+    # 2. Resilient getLOLSettings defaulting overlay features to enabled
+    target_get_settings = """async function getLOLSettings() {
+  let lolSettings = await db.get(dbKeys.LOL_SETTINGS);
+  if (!lolSettings) {
+    throw new Error("unable to get lolSettings from db");
+  }
+  return JSON.parse(lolSettings);
+}"""
+    replacement_get_settings = """async function getLOLSettings() {
+  // __BLITZ_ADBLOCK_ACTIVE__: Resilient settings with overlay enabled by default
+  let lolSettings = null;
+  try {
+    lolSettings = await db.get(dbKeys.LOL_SETTINGS);
+  } catch(e) {}
+  let parsed = {};
+  if (lolSettings) {
+    try {
+      parsed = JSON.parse(lolSettings);
+    } catch(e) {}
+  }
+  parsed.isAlwaysVisible = parsed.isAlwaysVisible !== false;
+  parsed.isSummonersRiftOverlayEnabled = parsed.isSummonersRiftOverlayEnabled !== false;
+  parsed.isSummonersRiftSkillOverlayEnabled2023 = parsed.isSummonersRiftSkillOverlayEnabled2023 !== false;
+  parsed.isLoadingScreenOverlayEnabled = parsed.isLoadingScreenOverlayEnabled !== false;
+  return parsed;
+}"""
+    if target_get_settings in content:
+        content = content.replace(target_get_settings, replacement_get_settings, 1)
+
+    # 3. Default fade / always-visible to true
+    target_fade = """function getFadeOption(lolSettings) {
+  return lolSettings.isAlwaysVisible || false;
+}"""
+    replacement_fade = """function getFadeOption(lolSettings) {
+  // __BLITZ_ADBLOCK_ACTIVE__: Default overlay to always visible
+  return lolSettings ? (lolSettings.isAlwaysVisible !== false) : true;
+}"""
+    if target_fade in content:
+        content = content.replace(target_fade, replacement_fade, 1)
+
+    # 4. Default CS & Skill overlay to enabled
+    target_cs_skill = """function getSkillOverlayEnabled(lolSettings) {
+  return lolSettings.isSummonersRiftSkillOverlayEnabled2023 || false;
+}
+
+function getCSOverlayEnabled(lolSettings, role) {
+  return lolSettings.isSummonersRiftOverlayEnabled || false;
+}"""
+    replacement_cs_skill = """function getSkillOverlayEnabled(lolSettings) {
+  // __BLITZ_ADBLOCK_ACTIVE__: Default skill overlay to enabled
+  return lolSettings ? (lolSettings.isSummonersRiftSkillOverlayEnabled2023 !== false) : true;
+}
+
+function getCSOverlayEnabled(lolSettings, role) {
+  // __BLITZ_ADBLOCK_ACTIVE__: Default CS overlay to enabled
+  return lolSettings ? (lolSettings.isSummonersRiftOverlayEnabled !== false) : true;
+}"""
+    if target_cs_skill in content:
+        content = content.replace(target_cs_skill, replacement_cs_skill, 1)
+
+    # 5. Default jungle timers, health relics, ultimate timers to enabled
+    target_jungle = """function getJungleTimersSettings(lolSettings) {
+  return {
+    enable: lolSettings[JUNGLE.enabledKey] || false,
+    displayOption: lolSettings[JUNGLE.displayOption] || false,
+    always_visible: lolSettings[JUNGLE.alwaysVisible] || false,
+  };
+}"""
+    replacement_jungle = """function getJungleTimersSettings(lolSettings) {
+  // __BLITZ_ADBLOCK_ACTIVE__: Default jungle timers to enabled & always visible
+  return {
+    enable: lolSettings?.[JUNGLE.enabledKey] !== false,
+    displayOption: lolSettings?.[JUNGLE.displayOption] ?? true,
+    always_visible: lolSettings?.[JUNGLE.alwaysVisible] !== false,
+  };
+}"""
+    if target_jungle in content:
+        content = content.replace(target_jungle, replacement_jungle, 1)
+
+    target_health = """function getHealthRelicTimersSettings(lolSettings) {
+  return {
+    enable: lolSettings[HEALTH.enabledKey] || false,
+  };
+}"""
+    replacement_health = """function getHealthRelicTimersSettings(lolSettings) {
+  // __BLITZ_ADBLOCK_ACTIVE__: Default health relic timers to enabled
+  return {
+    enable: lolSettings?.[HEALTH.enabledKey] !== false,
+  };
+}"""
+    if target_health in content:
+        content = content.replace(target_health, replacement_health, 1)
+
+    target_ult = """function getUltimateTimersSettings(lolSettings) {
+  return {
+    enable: lolSettings[ULTIMATE_TIMERS.enabledKey] || false,
+  };
+}"""
+    replacement_ult = """function getUltimateTimersSettings(lolSettings) {
+  // __BLITZ_ADBLOCK_ACTIVE__: Default ultimate timers to enabled
+  return {
+    enable: lolSettings?.[ULTIMATE_TIMERS.enabledKey] !== false,
+  };
+}"""
+    if target_ult in content:
+        content = content.replace(target_ult, replacement_ult, 1)
+
+    with open(file_path, "w", encoding="utf-8") as f:
+        f.write(content)
+    print("  [+] Patched src/gameHandlers/lol/overlaySettings.js (Overlay Pro status & all overlay components defaulted to ON)")
 
 
 def patch_listeners_utils(file_path):
